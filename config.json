@@ -58,3 +58,32 @@ print(botocore.__version__)
 print(boto3.__version__)
 EOF
 
+
+
+
+
+{
+  "dr_profile": "sso-east",
+
+  "prod_region": "us-east-1",
+  "dr_region":   "us-west-2",
+
+  "prod_role_arn": "arn:aws:iam::111111111111:role/GMS-CloudEngDR",
+
+  "vpc_map": {
+    "prod_vpc_id": "vpc-aaaaaaaaaaaaaaaaa",
+    "dr_vpc_id":   "vpc-bbbbbbbbbbbbbbbbb",
+    "subnet_map": {
+      "subnet-aaa111": "subnet-xxx111",
+      "subnet-aaa222": "subnet-xxx222",
+      "subnet-aaa333": "subnet-xxx333"
+    }
+  },
+
+  "filters": {
+    "security_group_name_prefixes": [],
+    "load_balancer_name_prefixes":  [],
+    "target_group_name_prefixes":   []
+  }
+}
+
