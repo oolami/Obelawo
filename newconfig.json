@@ -1,0 +1,30 @@
+{
+  "dr_profile": "sso-east",
+
+  "prod_region": "us-west-2",
+  "dr_region":   "us-east-1",
+
+  "prod_role_arn": "arn:aws:iam::724725670528:role/aws-reserved/sso.amazonaws.com/AWSReservedSSO_GMS-CloudEngDRProd_ab2da870aeef7f53"
+
+  "vpc_map": {
+    "prod_vpc_id": "vpc-0236274019baaf073",
+    "dr_vpc_id":   "vpc-011ac87c4482f4f66",
+    "subnet_map": {
+      "subnet-0db40a8609f428f7f": "subnet-0bf7d02ac8f99d5be",
+      "subnet-0ce8fce8534ce5a98": "subnet-069e5740fec7420ad",
+      "subnet-09aa24cac661f2fbe": "subnet-0ea2e4df160588143",
+      "subnet-0ad32471c5ba33814": "subnet-0c275e4c5353063ff",
+      "subnet-0b6ef53a606187015": "subnet-0e35c0eecab4cdc08",
+      "subnet-002ed60f5939c1d13": "subnet-0565b25c93646f1d6",
+      "subnet-09f20c5432aa49182": "subnet-030d8c0ebc1bdb580",
+      "subnet-09dadd5dff1abd963": "subnet-094fdc0968437d03d"
+
+    }
+  },
+
+  "filters": {
+    "security_group_name_prefixes": [],
+    "load_balancer_name_prefixes":  [],
+    "target_group_name_prefixes":   []
+  }
+}
