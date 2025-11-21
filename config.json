@@ -1,0 +1,37 @@
+{
+  "prod_profile": "GMS-CloudEngDR-prod",
+  "dr_profile":   "GMS-CloudEngDR-dr",
+
+  "prod_region": "us-east-1",
+  "dr_region":   "us-west-2",
+
+  "vpc_map": {
+    "prod_vpc_id": "vpc-aaaaaaaaaaaaaaaaa",
+    "dr_vpc_id":   "vpc-bbbbbbbbbbbbbbbbb",
+    "subnet_map": {
+      "subnet-aaa111": "subnet-xxx111",
+      "subnet-aaa222": "subnet-xxx222",
+      "subnet-aaa333": "subnet-xxx333"
+    }
+  },
+
+  "filters": {
+    "security_group_name_prefixes": [],
+    "load_balancer_name_prefixes":  [],
+    "target_group_name_prefixes":   []
+  }
+}
+
+
+
+
+execution steps
+
+aws sts get-caller-identity --profile GMS-CloudEngDR-prod
+aws sts get-caller-identity --profile GMS-CloudEngDR-dr
+
+
+python replicate_networking.py --config config.json --dry-run
+
+
+python replicate_networking.py --config config.json
