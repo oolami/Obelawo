@@ -7,6 +7,8 @@ import boto3
 from botocore.exceptions import ClientError
 
 
+# ---------- Helpers ----------
+
 def get_all(paginator, result_key: str, **kwargs) -> List[dict]:
     """Generic paginator helper."""
     items = []
@@ -15,10 +17,22 @@ def get_all(paginator, result_key: str, **kwargs) -> List[dict]:
     return items
 
 
+def name_matches_prefixes(name: str, prefixes: List[str]) -> bool:
+    """Return True if name matches any of the prefixes, or if prefixes list is empty."""
+    if not prefixes:
+        return True
+    return any(name.startswith(p) for p in prefixes)
+
+
 # ---------- Security Groups ----------
 
-def fetch_sg_maps(prod_ec2, dr_ec2, prod_vpc_id: str, dr_vpc_id: str):
-    """Fetch SGs from Prod and DR for the specified VPCs, build name-based maps."""
+def fetch_sg_maps(prod_ec2, dr_ec2,
+                  prod_vpc_id: str, dr_vpc_id: str,
+                  sg_prefixes: List[str]):
+    """
+    Fetch SGs from Prod and DR for the specified VPCs, build name-based maps.
+    Apply optional name prefix filtering on Prod SGs.
+    """
     prod_sgs = prod_ec2.describe_security_groups(
         Filters=[{"Name": "vpc-id", "Values": [prod_vpc_id]}]
     )["SecurityGroups"]
@@ -27,10 +41,13 @@ def fetch_sg_maps(prod_ec2, dr_ec2, prod_vpc_id: str, dr_vpc_id: str):
         Filters=[{"Name": "vpc-id", "Values": [dr_vpc_id]}]
     )["SecurityGroups"]
 
-    # Filter out default
-    filtered_prod_sgs = [sg for sg in prod_sgs if sg["GroupName"] != "default"]
+    # Filter out default and apply prefixes
+    filtered_prod_sgs = [
+        sg for sg in prod_sgs
+        if sg["GroupName"] != "default"
+        and name_matches_prefixes(sg["GroupName"], sg_prefixes)
+    ]
 
-    # Map by name
     prod_by_name = {sg["GroupName"]: sg for sg in filtered_prod_sgs}
     dr_by_name = {sg["GroupName"]: sg for sg in dr_sgs}
 
@@ -57,7 +74,6 @@ def translate_permissions(ip_permissions: List[dict],
                 new_pair["GroupId"] = sg_id_map[prod_id]
                 new_pairs.append(new_pair)
             else:
-                # If we can't map the SG, skip that pair
                 print(f"      [SG] WARNING: skipping rule referencing SG {prod_id}")
 
         new_perm["UserIdGroupPairs"] = new_pairs
@@ -66,14 +82,16 @@ def translate_permissions(ip_permissions: List[dict],
     return translated
 
 
-def ensure_sgs_in_dr(prod_ec2, dr_ec2, prod_vpc_id: str, dr_vpc_id: str,
+def ensure_sgs_in_dr(prod_ec2, dr_ec2,
+                     prod_vpc_id: str, dr_vpc_id: str,
+                     sg_prefixes: List[str],
                      dry_run: bool) -> Dict[str, str]:
     """
-    Ensure all non-default Prod SGs in the given VPC exist in DR VPC.
+    Ensure all filtered, non-default Prod SGs in the given VPC exist in DR VPC.
     Returns mapping: prod_sg_id -> dr_sg_id
     """
     prod_by_name, dr_by_name = fetch_sg_maps(
-        prod_ec2, dr_ec2, prod_vpc_id, dr_vpc_id
+        prod_ec2, dr_ec2, prod_vpc_id, dr_vpc_id, sg_prefixes
     )
 
     sg_id_map: Dict[str, str] = {}
@@ -163,13 +181,20 @@ def ensure_sgs_in_dr(prod_ec2, dr_ec2, prod_vpc_id: str, dr_vpc_id: str,
 
 def ensure_target_groups_in_dr(prod_elb, dr_elb,
                                dr_vpc_id: str,
+                               tg_prefixes: List[str],
                                dry_run: bool) -> Dict[str, str]:
     """
-    Ensure all Prod target groups exist in DR VPC.
+    Ensure all filtered Prod target groups exist in DR VPC.
     Returns mapping: prod_tg_arn -> dr_tg_arn
     """
     paginator = prod_elb.get_paginator("describe_target_groups")
     prod_tgs = get_all(paginator, "TargetGroups")
+
+    # Apply name filter
+    prod_tgs = [
+        tg for tg in prod_tgs
+        if name_matches_prefixes(tg["TargetGroupName"], tg_prefixes)
+    ]
 
     # DR: map by name
     try:
@@ -246,12 +271,19 @@ def translate_actions(actions: List[dict], tg_arn_map: Dict[str, str]) -> List[d
 
 def ensure_lbs_in_dr(prod_elb, dr_elb,
                      vpc_map: dict,
+                     lb_prefixes: List[str],
                      sg_id_map: Dict[str, str],
                      tg_arn_map: Dict[str, str],
                      dry_run: bool):
     """Replicate LBs and listeners from Prod to DR based on VPC & subnet mapping."""
     paginator = prod_elb.get_paginator("describe_load_balancers")
     prod_lbs = get_all(paginator, "LoadBalancers")
+
+    # Apply name filter
+    prod_lbs = [
+        lb for lb in prod_lbs
+        if name_matches_prefixes(lb["LoadBalancerName"], lb_prefixes)
+    ]
 
     # DR LB map by name
     try:
@@ -263,10 +295,8 @@ def ensure_lbs_in_dr(prod_elb, dr_elb,
         dr_by_name = {}
 
     lb_arn_map: Dict[str, str] = {}
-
     subnet_map: Dict[str, str] = vpc_map.get("subnet_map", {})
 
-    # Create or reuse DR LBs
     for lb in prod_lbs:
         name = lb["LoadBalancerName"]
         prod_arn = lb["LoadBalancerArn"]
@@ -339,12 +369,10 @@ def ensure_lbs_in_dr(prod_elb, dr_elb,
 
         for listener in prod_listeners:
             print(f"     Listener {listener['Port']}/{listener['Protocol']}")
-            # For simplicity, assume listener doesn't already exist in DR.
             if dry_run:
                 print("         (dry-run, not creating listener)")
                 continue
 
-            # Translate default actions (only 'forward' TG case is handled fully here)
             default_actions = translate_actions(listener["DefaultActions"], tg_arn_map)
 
             params = {
@@ -389,38 +417,48 @@ def main():
     with open(args.config) as f:
         cfg = json.load(f)
 
-    region   = cfg["region"]
-    vpc_map  = cfg["vpc_map"]
-
-    prod_profile = cfg["prod_profile"]
     dr_profile   = cfg["dr_profile"]
+    prod_region  = cfg["prod_region"]
+    dr_region    = cfg["dr_region"]
+    vpc_map      = cfg["vpc_map"]
 
-    # --- Create sessions using your CLI/SSO profiles ---
-    print(f"Using AWS profile for Prod (READ-ONLY in script): {prod_profile}")
-    prod_sess = boto3.Session(profile_name=prod_profile)
+    filters      = cfg.get("filters", {})
+    sg_prefixes  = filters.get("security_group_name_prefixes", [])
+    lb_prefixes  = filters.get("load_balancer_name_prefixes", [])
+    tg_prefixes  = filters.get("target_group_name_prefixes", [])
 
+    # --- Prod session: use profile if provided, otherwise default credentials ---
+    prod_profile = cfg.get("prod_profile")
+    if prod_profile:
+        print(f"Using AWS profile for Prod (READ-ONLY in script): {prod_profile}")
+        prod_sess = boto3.Session(profile_name=prod_profile)
+    else:
+        print("Using DEFAULT AWS credentials for Prod (READ-ONLY in script).")
+        prod_sess = boto3.Session()
+
+    # --- DR session: always via explicit profile ---
     print(f"Using AWS profile for DR (CREATE/MODIFY): {dr_profile}")
     dr_sess = boto3.Session(profile_name=dr_profile)
 
     # --- Extra safety: verify different accounts ---
-    prod_sts = prod_sess.client("sts")
-    dr_sts   = dr_sess.client("sts")
+    prod_sts = prod_sess.client("sts", region_name=prod_region)
+    dr_sts   = dr_sess.client("sts", region_name=dr_region)
 
     prod_acct = prod_sts.get_caller_identity()["Account"]
     dr_acct   = dr_sts.get_caller_identity()["Account"]
 
-    print(f"Prod account: {prod_acct}")
-    print(f"DR account:   {dr_acct}")
+    print(f"Prod account: {prod_acct} (region {prod_region})")
+    print(f"DR account:   {dr_acct} (region {dr_region})")
 
     if prod_acct == dr_acct:
         raise RuntimeError("Prod and DR sessions are pointing to the SAME account. Aborting.")
 
     # --- Create service clients ---
-    prod_ec2 = prod_sess.client("ec2", region_name=region)
-    prod_elb = prod_sess.client("elbv2", region_name=region)
+    prod_ec2 = prod_sess.client("ec2", region_name=prod_region)
+    prod_elb = prod_sess.client("elbv2", region_name=prod_region)
 
-    dr_ec2   = dr_sess.client("ec2", region_name=region)
-    dr_elb   = dr_sess.client("elbv2", region_name=region)
+    dr_ec2   = dr_sess.client("ec2", region_name=dr_region)
+    dr_elb   = dr_sess.client("elbv2", region_name=dr_region)
 
     prod_vpc_id = vpc_map["prod_vpc_id"]
     dr_vpc_id   = vpc_map["dr_vpc_id"]
@@ -431,6 +469,7 @@ def main():
         dr_ec2,     # create/authorize in DR
         prod_vpc_id,
         dr_vpc_id,
+        sg_prefixes,
         dry_run=args.dry_run
     )
 
@@ -439,6 +478,7 @@ def main():
         prod_elb,   # describe-only
         dr_elb,     # create in DR
         dr_vpc_id,
+        tg_prefixes,
         dry_run=args.dry_run
     )
 
@@ -447,6 +487,7 @@ def main():
         prod_elb,   # describe-only
         dr_elb,     # create in DR
         vpc_map,
+        lb_prefixes,
         sg_id_map,
         tg_arn_map,
         dry_run=args.dry_run
