@@ -1,0 +1,253 @@
+1. Define the Purpose
+
+Before anything technical, you need clarity on:
+
+Why are we classifying data? (Compliance? DR readiness? Least-privilege? SOC2? Internal audit?)
+
+What problem are we trying to solve?
+(Unauthorized access, unencrypted buckets, secrets misuse, etc.)
+
+This becomes the backbone of your scope.
+
+✅ 2. Build a Simple Data Classification Model
+
+Most companies use a 3–4 tier model:
+
+Example: 4-Level Classification
+Level	Examples	Required Controls
+Public	Website content, marketing docs	No restriction
+Internal	Internal emails, internal dashboards	Minimal access control
+Confidential	Customer data, employee data, configs	Encryption, RBAC, logging
+Restricted	SSN, PII, PHI, financials, secrets, private keys	Strong encryption, strict RBAC, monitoring, tokenization
+
+You can adopt or modify this.
+
+✅ 3. Build the Data Flow Inventory
+
+You cannot classify data until you know:
+
+What data you have
+
+Where the data lives
+
+Where the data moves
+
+Who can access it
+
+How it is processed
+
+Create an inventory for each:
+
+S3 buckets
+
+Databases (RDS, Dynamo, On-prem SQL)
+
+File shares, FSx
+
+Cache layers (Redis, ElasticCache)
+
+Application logs
+
+Secrets (SSM, Vault, IAM, GitHub secrets, etc.)
+
+API data flows
+
+K8s volumes
+
+CI/CD logs (GitLab, GitHub, Jenkins)
+
+This is where most security gaps show up.
+
+✅ 4. Assign Classification Levels to Each Data Type
+
+Examples:
+
+Data Type	Classification
+Customer PII	Restricted
+API keys	Restricted
+Application logs with user identifiers	Confidential
+DNS zones	Internal
+Marketing assets	Public
+
+This is your Phase 1 deliverable.
+
+✅ 5. Map Classification to Required Controls
+
+Now you tie it into encryption, data at rest, in transit, in use, etc.
+
+🚀 Use Cases (Exactly What You Can Work On)
+Use Case 1: Data at Rest (Storage Security)
+
+Look at existing storage and evaluate whether encryption is enabled.
+
+Examples:
+
+Check if S3 buckets use AES-256 / KMS encryption
+
+Ensure EBS volumes have encryption by default
+
+Ensure RDS and DynamoDB encryption is turned on
+
+Validate FSx encryption settings
+
+Deliverable:
+A chart showing which data stores are encrypted or not, based on classification level.
+
+Use Case 2: Data in Transit
+
+Focus on securing how data moves.
+
+Check:
+
+ALB → Target TLS enforcement
+
+TLS policies on Load Balancers (e.g., TLS 1.2 minimum)
+
+API Gateway → ensure encryption enforced
+
+Redis/ElastiCache encryption in transit
+
+Database connections using SSL
+
+Internal service-to-service traffic using mTLS (if applicable)
+
+SSH access replaced with SSM Session Manager where possible
+
+Deliverable:
+List of services currently using plaintext traffic → remediation plan.
+
+Use Case 3: Data in Use
+
+This is the hardest category. You're focusing on:
+
+Secrets handling in CI/CD
+
+IAM roles vs long-lived keys
+
+Tokens stored in memory
+
+Application code storing data in local cache
+
+Preventing access to plaintext secrets in pipeline logs
+
+Deliverable:
+A report on where data is exposed during processing (logs, pipelines, screenshots, debug prints).
+
+Use Case 4: Automated Discovery of Sensitive Data
+
+Pick one:
+
+S3 Macie
+
+GuardDuty
+
+DLP tools (Netskope, Microsoft Purview, Splunk Enterprise Security)
+
+GitHub Advanced Security (secret scanning)
+
+Elastic/Kibana PII detection in logs
+
+Deliverable:
+A list of high-risk buckets or logs containing PII.
+
+Use Case 5: IAM Access & Least Privilege Based on Classification
+
+Tie classification to access control:
+
+Restricted → Only IAM roles allowed, tightly scoped
+
+Confidential → Limited teams
+
+Internal → General org-level access
+
+Public → No AWS access controls needed
+
+Deliverable:
+A model showing which IAM roles/users should access which data types.
+
+Use Case 6: Encryption Key Management
+
+Identify:
+
+What KMS keys exist
+
+Who can use them
+
+What is customer-managed vs AWS-managed
+
+Rotation policy
+
+Key misuse (e.g., same key used for unrelated environments)
+
+Deliverable:
+KMS key inventory + recommended restructuring.
+
+Use Case 7: Secrets and Credentials Cleanup
+
+Review:
+
+IAM users with access keys
+
+Hardcoded secrets in code repos
+
+Secrets stored in GitHub/GitLab pipelines
+
+Access keys older than 90 days
+
+Deliverable:
+A secrets maturity assessment.
+
+Use Case 8: Log Data Classification
+
+Logs often leak sensitive data.
+
+Check:
+
+Application logs
+
+CloudTrail
+
+VPC Flow Logs
+
+Nginx/ALB logs
+
+Ensure PII is masked before logs reach S3 or CloudWatch.
+
+Use Case 9: Data Retention & Expiry
+
+Tie classification to retention:
+
+Restricted → shorter retention & strict deletion
+
+Confidential → 90–180 days
+
+Internal → longer
+
+Public → unlimited
+
+🧩 What To Work On First (Priority Order)
+Phase 1 — Foundation
+
+Define classification levels
+
+Create a data inventory
+
+Categorize each data type
+
+Phase 2 — Technical Controls
+
+Encryption at rest audit
+
+Encryption in transit audit
+
+IAM access mapping
+
+Phase 3 — Detection & Ongoing Governance
+
+Automated PII scanning
+
+Log sanitization
+
+DLP controls
+
+Retention policies
