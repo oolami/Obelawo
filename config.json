@@ -1,6 +1,5 @@
 {
-  "prod_profile": "GMS-CloudEngDR-prod",
-  "dr_profile":   "GMS-CloudEngDR-dr",
+  "dr_profile": "GMS-CloudEngDR-dr",
 
   "prod_region": "us-east-1",
   "dr_region":   "us-west-2",
@@ -21,6 +20,7 @@
     "target_group_name_prefixes":   []
   }
 }
+
 
 
 
