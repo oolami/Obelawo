@@ -98,7 +98,7 @@ def ensure_sgs_in_dr(prod_ec2, dr_ec2,
 
     sg_id_map: Dict[str, str] = {}
 
-    # First pass: create missing SGs (without rules)
+    # First pass: create missing SGs (without rules, and WITHOUT tags)
     for name, prod_sg in prod_by_name.items():
         if name in dr_by_name:
             dr_sg = dr_by_name[name]
@@ -116,13 +116,7 @@ def ensure_sgs_in_dr(prod_ec2, dr_ec2,
             "Description": prod_sg["Description"],
             "VpcId": dr_vpc_id,
         }
-
-        tags = prod_sg.get("Tags")
-        if tags:
-            kwargs["TagSpecifications"] = [{
-                "ResourceType": "security-group",
-                "Tags": tags,
-            }]
+        # NOTE: intentionally NOT copying any tags to avoid aws:* reserved keys
 
         resp = dr_ec2.create_security_group(**kwargs)
         new_id = resp["GroupId"]
@@ -160,11 +154,12 @@ def ensure_sgs_in_dr(prod_ec2, dr_ec2,
             try:
                 dr_ec2.authorize_security_group_ingress(
                     GroupId=dr_id,
-                    IpPermissions=Ingress
+                    IpPermissions=ingress
                 )
             except ClientError as e:
                 if e.response["Error"]["Code"] != "InvalidPermission.Duplicate":
                     print(f"[SG] ERROR ingress {name}: {e}")
+
         # Egress
         if egress:
             try:
