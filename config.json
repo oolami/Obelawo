@@ -35,3 +35,26 @@ python replicate_networking.py --config config.json --dry-run
 
 
 python replicate_networking.py --config config.json
+
+
+
+python -m pip install --upgrade boto3 botocore --trusted-host pypi.org --trusted-host files.pythonhosted.org --trusted-host pypi.python.org
+
+If your corporate proxy injects TLS, add:
+--trusted-host=pypi.org --trusted-host=files.pythonhosted.org
+
+
+option 2
+
+"C:\Program Files\Amazon\AWSCLIV2\python.exe" -m pip install --upgrade boto3 botocore
+
+
+verify the version
+
+python - <<EOF
+import botocore
+import boto3
+print(botocore.__version__)
+print(boto3.__version__)
+EOF
+
